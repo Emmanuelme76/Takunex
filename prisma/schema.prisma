@@ -3,9 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
 }
 
 // ==========================================
@@ -40,11 +38,11 @@ enum DocsVerification {
 }
 
 enum OrderStatus {
-  PENDING       // Solicitada por el cliente
-  ACCEPTED      // Aceptada por el proveedor
-  IN_PROGRESS   // Trabajo en curso
-  COMPLETED     // Trabajo finalizado
-  CANCELLED     // Cancelada
+  PENDING     // Solicitada por el cliente
+  ACCEPTED    // Aceptada por el proveedor
+  IN_PROGRESS // Trabajo en curso
+  COMPLETED   // Trabajo finalizado
+  CANCELLED   // Cancelada
 }
 
 enum PaymentMethodType {
@@ -204,26 +202,26 @@ model ProviderService {
 // ==========================================
 
 model ServiceOrder {
-  id             String              @id @default(uuid())
-  clientId       String
-  client         Homeowner           @relation("HomeownerOrders", fields: [clientId], references: [id])
-  providerId     String
-  provider       Provider            @relation("ProviderOrders", fields: [providerId], references: [id])
-  serviceId      String
-  service        ProviderService     @relation(fields: [serviceId], references: [id])
+  id            String              @id @default(uuid())
+  clientId      String
+  client        Homeowner           @relation("HomeownerOrders", fields: [clientId], references: [id])
+  providerId    String
+  provider      Provider            @relation("ProviderOrders", fields: [providerId], references: [id])
+  serviceId     String
+  service       ProviderService     @relation(fields: [serviceId], references: [id])
 
-  locationId     String              @unique
-  location       Location            @relation("OrderLocation", fields: [locationId], references: [id])
+  locationId    String              @unique
+  location      Location            @relation("OrderLocation", fields: [locationId], references: [id])
 
-  status         OrderStatus         @default(PENDING)
-  scheduledDate  DateTime
-  description    String?             // Notas o detalles del trabajo
+  status        OrderStatus         @default(PENDING)
+  scheduledDate DateTime
+  description   String?             // Notas o detalles del trabajo
 
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
-  review         Review?
-  transaction    PaymentTransaction?
+  review        Review?
+  transaction   PaymentTransaction?
 }
 
 model PaymentMethod {
@@ -306,5 +304,4 @@ model Notification {
   isRead    Boolean  @default(false)
   metadata  Json?    // Guarda recibos de pago o contacto del proveedor asignado
   createdAt DateTime @default(now())
-
 }
