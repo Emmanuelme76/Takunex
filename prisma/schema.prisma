@@ -1,13 +1,310 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ==========================================
+// ENUMS (Alineados al UML y Casos de Uso)
+// ==========================================
+
+enum UserRole {
+  HOMEOWNER
+  PROVIDER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+  DELETED // Soft Delete: nunca borramos registros físicos
+}
+
+enum OperationalStatus {
+  ACTIVE
+  BUSY
+  OFFLINE
+}
+
+enum DocsVerification {
+  UNSUBMITTED
+  PENDING_VERIFICATION
+  APPROVED
+  DECLINED
+}
+
+enum OrderStatus {
+  PENDING       // Solicitada por el cliente
+  ACCEPTED      // Aceptada por el proveedor
+  IN_PROGRESS   // Trabajo en curso
+  COMPLETED     // Trabajo finalizado
+  CANCELLED     // Cancelada
+}
+
+enum PaymentMethodType {
+  CARD
+  CASH
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum DocumentType {
+  GOVERNMENT_ID
+  PROOF_OF_ADDRESS
+}
+
+// ==========================================
+// JERARQUÍA DE USUARIOS (Class Table Inheritance)
+// ==========================================
+
+model User {
+  id             String     @id @default(uuid())
+  supabaseAuthId String     @unique // Vínculo estricto con Supabase Auth (JWT)
+  firstName      String
+  lastName       String
+  email          String     @unique
+  phoneNumber    String?    @unique
+  avatarUrl      String?
+
+  // Control de Acceso y Verificación
+  role           UserRole   @default(HOMEOWNER) // Rol activo actual en la sesión
+  status         UserStatus @default(ACTIVE)
+  emailVerified  Boolean    @default(false)
+  phoneVerified  Boolean    @default(false)
+
+  // Auditoría y Soft Delete
+  deletedAt      DateTime?
+  banReason      String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  // Perfiles por Rol (Permite hacer switchRole manteniendo historial)
+  homeowner      Homeowner?
+  provider       Provider?
+  administrator  Administrator?
+  notifications  Notification[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model Homeowner {
+  id                   String          @id @default(uuid())
+  userId               String          @unique
+  user                 User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  hiredServicesHistory ServiceOrder[]  @relation("HomeownerOrders")
+  savedPaymentMethods  PaymentMethod[]
+  reviewsWritten       Review[]        @relation("ReviewsWritten")
+}
+
+model Provider {
+  id                 String            @id @default(uuid())
+  userId             String            @unique
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  aboutMe            String?
+  operationalStatus  OperationalStatus @default(OFFLINE) // Active / Busy / Offline
+  verificationStatus DocsVerification  @default(UNSUBMITTED)
+  rejectionReason    String?           // Obligatorio si Admin marca DECLINED
+
+  // Ubicación (workArea del UML)
+  workAreaId         String?           @unique
+  workArea           Location?         @relation("ProviderWorkArea", fields: [workAreaId], references: [id])
+
+  // Finanzas y Reputación (Vital para el motor de comisiones 10-15%)
+  payoutAccountInfo  String?           // Datos simulados de cuenta de cobro
+  virtualBalance     Decimal           @default(0.00) @db.Decimal(10, 2)
+  rating             Float             @default(0.0)
+  totalReviews       Int               @default(0)
+
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  // Relaciones
+  documents          ProviderDocument[]
+  offeredServices    ProviderService[]
+  ordersReceived     ServiceOrder[]    @relation("ProviderOrders")
+  reviewsReceived    Review[]          @relation("ReviewsReceived")
+}
+
+model Administrator {
+  id        String     @id @default(uuid())
+  userId    String     @unique
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  auditLogs AuditLog[]
+}
+
+// ==========================================
+// DOMINIO DE UBICACIÓN, DOCUMENTOS Y SERVICIOS
+// ==========================================
+
+model Location {
+  id           String        @id @default(uuid())
+  address      String
+  city         String?
+  state        String?
+  zipCode      String?
+  latitude     Float?
+  longitude    Float?
+
+  provider     Provider?     @relation("ProviderWorkArea")
+  serviceOrder ServiceOrder? @relation("OrderLocation")
+}
+
+model ProviderDocument {
+  id          String       @id @default(uuid())
+  providerId  String
+  provider    Provider     @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  type        DocumentType // GOVERNMENT_ID o PROOF_OF_ADDRESS
+  storagePath String       // Ruta interna en bucket privado 'provider-documents'
+  uploadedAt  DateTime     @default(now())
+}
+
+model ServiceCategory {
+  id          String            @id @default(uuid())
+  name        String            @unique // Ej: Plumbing, Electrical, Cleaning
+  description String?
+  iconName    String?
+  isActive    Boolean           @default(true)
+
+  services    ProviderService[]
+}
+
+model ProviderService {
+  id          String          @id @default(uuid())
+  providerId  String
+  provider    Provider        @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  categoryId  String
+  category    ServiceCategory @relation(fields: [categoryId], references: [id])
+
+  title       String
+  description String
+  hourlyRate  Decimal         @db.Decimal(10, 2)
+  isActive    Boolean         @default(true)
+
+  orders      ServiceOrder[]
+}
+
+// ==========================================
+// ÓRDENES, PAGOS Y RESEÑAS
+// ==========================================
+
+model ServiceOrder {
+  id             String              @id @default(uuid())
+  clientId       String
+  client         Homeowner           @relation("HomeownerOrders", fields: [clientId], references: [id])
+  providerId     String
+  provider       Provider            @relation("ProviderOrders", fields: [providerId], references: [id])
+  serviceId      String
+  service        ProviderService     @relation(fields: [serviceId], references: [id])
+
+  locationId     String              @unique
+  location       Location            @relation("OrderLocation", fields: [locationId], references: [id])
+
+  status         OrderStatus         @default(PENDING)
+  scheduledDate  DateTime
+  description    String?             // Notas o detalles del trabajo
+
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  review         Review?
+  transaction    PaymentTransaction?
+}
+
+model PaymentMethod {
+  id           String               @id @default(uuid())
+  homeownerId  String
+  homeowner    Homeowner            @relation(fields: [homeownerId], references: [id], onDelete: Cascade)
+
+  type         PaymentMethodType    // CARD o CASH
+  isDefault    Boolean              @default(false)
+
+  cardDetails  CardPayment?
+  transactions PaymentTransaction[]
+}
+
+model CardPayment {
+  id              String        @id @default(uuid())
+  paymentMethodId String        @unique
+  paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id], onDelete: Cascade)
+
+  cardholderName  String
+  last4Digits     String        // Cumple RF 3.4: nunca guardar número completo ni CVV
+  cardBrand       String
+  expirationDate  String
+  gatewayToken    String
+}
+
+model PaymentTransaction {
+  id                String        @id @default(uuid())
+  orderId           String        @unique
+  order             ServiceOrder  @relation(fields: [orderId], references: [id])
+
+  methodUsedId      String
+  methodUsed        PaymentMethod @relation(fields: [methodUsedId], references: [id])
+
+  // Finanzas exactas con Decimal (Comisión 10% - 15%)
+  totalAmount       Decimal       @db.Decimal(10, 2)
+  commissionRate    Decimal       @default(0.12) @db.Decimal(4, 2) // Ej: 0.12 = 12%
+  platformComission Decimal       @db.Decimal(10, 2) // Retención Takunex
+  providerNetAmount Decimal       @db.Decimal(10, 2) // Ganancia neta del proveedor
+
+  status            PaymentStatus @default(PENDING)
+  transactionDate   DateTime      @default(now())
+}
+
+model Review {
+  id           String       @id @default(uuid())
+  orderId      String       @unique
+  order        ServiceOrder @relation(fields: [orderId], references: [id])
+  authorId     String
+  author       Homeowner    @relation("ReviewsWritten", fields: [authorId], references: [id])
+  targetId     String
+  target       Provider     @relation("ReviewsReceived", fields: [targetId], references: [id])
+
+  starRating   Int          // 1 a 5 estrellas
+  comment      String?
+  isDeleted    Boolean      @default(false) // Soft delete para moderación Admin
+  feedbackDate DateTime     @default(now())
+}
+
+// ==========================================
+// AUDITORÍA Y NOTIFICACIONES
+// ==========================================
+
+model AuditLog {
+  id        String        @id @default(uuid())
+  adminId   String
+  admin     Administrator @relation(fields: [adminId], references: [id])
+  action    String        // Ej: "APPROVE_PROVIDER", "BAN_USER", "DELETE_REVIEW"
+  targetId  String
+  details   String?       // Motivo obligatorio en rechazos o baneos
+  createdAt DateTime      @default(now())
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  metadata  Json?    // Guarda recibos de pago o contacto del proveedor asignado
+  createdAt DateTime @default(now())
+
 }
