@@ -249,21 +249,22 @@ model CardPayment {
 }
 
 model PaymentTransaction {
-  id                String        @id @default(uuid())
-  orderId           String        @unique
-  order             ServiceOrder  @relation(fields: [orderId], references: [id])
+  id                String            @id @default(uuid())
+  orderId           String            @unique
+  order             ServiceOrder      @relation(fields: [orderId], references: [id])
 
-  methodUsedId      String
-  methodUsed        PaymentMethod @relation(fields: [methodUsedId], references: [id])
+  paymentType       PaymentMethodType @default(CARD) // CARD o CASH directo en la transacción
+  methodUsedId      String?           // Opcional: se llena solo si usó una tarjeta guardada
+  methodUsed        PaymentMethod?    @relation(fields: [methodUsedId], references: [id])
 
   // Finanzas exactas con Decimal (Comisión 10% - 15%)
-  totalAmount       Decimal       @db.Decimal(10, 2)
-  commissionRate    Decimal       @default(0.12) @db.Decimal(4, 2) // Ej: 0.12 = 12%
-  platformComission Decimal       @db.Decimal(10, 2) // Retención Takunex
-  providerNetAmount Decimal       @db.Decimal(10, 2) // Ganancia neta del proveedor
+  totalAmount       Decimal           @db.Decimal(10, 2)
+  commissionRate    Decimal           @default(0.12) @db.Decimal(4, 2) // Ej: 0.12 = 12%
+  platformComission Decimal           @db.Decimal(10, 2) // Retención Takunex
+  providerNetAmount Decimal           @db.Decimal(10, 2) // Ganancia neta del proveedor
 
-  status            PaymentStatus @default(PENDING)
-  transactionDate   DateTime      @default(now())
+  status            PaymentStatus     @default(PENDING)
+  transactionDate   DateTime          @default(now())
 }
 
 model Review {
