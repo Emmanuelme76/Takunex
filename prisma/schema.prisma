@@ -81,6 +81,11 @@ model User {
   emailVerified  Boolean    @default(false)
   phoneVerified  Boolean    @default(false)
 
+  // Verificación temporal de teléfono (OTP por SMS)
+  pendingPhone   String?
+  otpCode        String?
+  otpExpiresAt   DateTime?
+
   // Auditoría y Soft Delete
   deletedAt      DateTime?
   banReason      String?
