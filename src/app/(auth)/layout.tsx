@@ -1,29 +1,25 @@
-import type { ReactNode } from "react";
-import Link from "next/link";
+import Image from "next/image";
 
-export default function AuthLayout({ children }: { children: ReactNode }) {
+export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col justify-center bg-slate-50 px-4 py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <Link
-          href="/"
-          className="flex items-center justify-center gap-2 text-2xl font-bold tracking-tight text-slate-900"
-        >
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-base font-extrabold text-white">
-            T
-          </span>
-          <span>Takunex</span>
-        </Link>
-        <p className="mt-2 text-center text-xs font-medium uppercase tracking-wider text-slate-500">
-          Trusted Home Services Marketplace
-        </p>
-      </div>
+    <main className="flex min-h-screen items-center justify-center bg-tx-bg p-4">
+      <div className="flex w-full max-w-4xl overflow-hidden rounded-3xl bg-white shadow-sm">
+        {/* Panel izquierdo: se oculta en móvil (responsive) */}
+        <aside className="hidden items-center justify-center bg-tx-teal p-10 md:flex md:w-2/5">
+          <Image
+            src="/logo-tx.svg"
+            alt="Takunex logo"
+            width={240}
+            height={200}
+            priority
+          />
+        </aside>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="rounded-2xl border border-slate-200 bg-white px-6 py-8 shadow-sm sm:px-10">
-          {children}
-        </div>
+        {/* Panel derecho: aquí se renderiza cada page.tsx */}
+        <section className="flex w-full items-center justify-center px-6 py-10 sm:px-12 md:w-3/5">
+          <div className="w-full max-w-sm">{children}</div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }

@@ -38,9 +38,13 @@ export function GoogleAuthButton({
         type="button"
         onClick={handleGoogleSignIn}
         disabled={isLoading}
-        className="flex w-full items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+        className="relative flex w-full items-center justify-center rounded-full bg-tx-gray-light/40 px-12 py-3 text-sm text-tx-ink transition hover:bg-tx-gray-light/70 focus:outline-none focus:ring-2 focus:ring-tx-sky disabled:cursor-not-allowed disabled:opacity-60"
       >
-        <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
+        <svg
+          className="absolute left-5 h-5 w-5"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
           <path
             d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
             fill="#4285F4"
