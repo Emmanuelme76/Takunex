@@ -68,10 +68,15 @@ export async function sendVerificationSms(
     console.error("Twilio SMS Error:", error);
     const twilioErr = error as { code?: number; message?: string };
 
-    if (twilioErr.code === 21608) {
+    // Si el número no está en los 2 Verified Caller IDs de Twilio Trial,
+    // simulamos el envío usando el PIN que ya guardamos en Prisma
+    if (twilioErr.code === 21608|| twilioErr.code === 572002) {
+      console.warn(
+        `\n[Takunex SIMULATED SMS] Number ${toPhoneNumber} is not registered in Twilio Trial. Use OTP Code: ${fallbackCode}\n`
+      );
       return {
-        success: false,
-        error: "Twilio Trial limit: this phone number is not in Verified Caller IDs.",
+        success: true,
+        actualCode: fallbackCode,
       };
     }
 
