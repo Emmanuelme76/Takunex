@@ -1,8 +1,10 @@
 "use client";
 
+"use client";
+
 import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { loginUser } from "@/actions/auth.actions";
 import { GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
 
@@ -16,7 +18,6 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 
 function LoginFormContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const urlErrorCode = searchParams.get("error");
   const initialUrlError = urlErrorCode
@@ -32,19 +33,24 @@ function LoginFormContent() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
     setFormError(null);
+    setIsLoading(true);
 
-    const result = await loginUser({ email, password });
+    try {
+      const result = await loginUser({ email, password });
 
-    if (!result.success) {
-      setFormError(result.error ?? "Invalid credentials.");
+      if (!result.success) {
+        setFormError(result.error ?? "Invalid email or password.");
+        setIsLoading(false);
+        return;
+      }
+
+      // Navegación completa para que proxy.ts/middleware lea las cookies recién creadas
+      window.location.href = result.redirectTo ?? "/homeowner/dashboard";
+    } catch {
+      setFormError("Connection error while signing in. Please try again.");
       setIsLoading(false);
-      return;
     }
-
-    router.push(result.redirectTo ?? "/homeowner/dashboard");
-    router.refresh();
   };
 
   return (

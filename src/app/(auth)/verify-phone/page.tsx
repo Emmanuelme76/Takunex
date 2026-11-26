@@ -56,8 +56,7 @@ export default function VerifyPhonePage() {
 
   const handleSignOut = async () => {
     await logoutUser();
-    router.push("/login");
-    router.refresh();
+    window.location.href = "/login";
   };
 
   return (
