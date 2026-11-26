@@ -190,23 +190,21 @@ export async function sendPhoneOtp(
     },
   });
 
-  // Enviamos el SMS real mediante tu servicio gratuito de Twilio
-  try {
-    await sendVerificationSms(cleanPhone, otpCode);
-  } catch (err: unknown) {
-    const twilioErr = err as { code?: number; message?: string };
-    // Error 21608: número no registrado en Verified Caller IDs de Twilio Free Trial
-    if (twilioErr.code === 21608) {
-      return {
-        success: false,
-        error:
-          "Twilio Trial limit: this phone number is not in the authorized test list.",
-      };
-    }
+const smsResult = await sendVerificationSms(cleanPhone, otpCode);
+
+  if (!smsResult.success) {
     return {
       success: false,
-      error: "Failed to send SMS verification code. Please check the number.",
+      error: smsResult.error ?? "Failed to send SMS verification code.",
     };
+  }
+
+  // Sincronizamos Prisma con el código exacto de 6 dígitos que Twilio envió en la plantilla sms_2fa
+  if (smsResult.actualCode && smsResult.actualCode !== otpCode) {
+    await prisma.user.update({
+      where: { id: dbUser.id },
+      data: { otpCode: smsResult.actualCode },
+    });
   }
 
   return { success: true };

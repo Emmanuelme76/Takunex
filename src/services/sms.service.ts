@@ -6,33 +6,22 @@ const authToken = process.env.TWILIO_AUTH_TOKEN;
 const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
 const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
 
-
 const client = accountSid && authToken ? twilio(accountSid, authToken) : null;
 
 export interface SendOtpResult {
   success: boolean;
+  actualCode?: string;
   error?: string;
 }
 
-/**
- * Genera un código OTP numérico seguro de 6 dígitos (entre 100000 y 999999).
- */
 export function generateOtpCode(): string {
   return crypto.randomInt(100000, 1000000).toString();
 }
 
-/**
- * Envía el código de verificación OTP por SMS mediante Twilio.
- * Detecta automáticamente si tu .env usa MessagingServiceSid (MG...) o un número (+1...).
- *
- * @param toPhoneNumber Número destino en formato internacional E.164 (ej. "+523312345678")
- * @param code Código OTP de 6 dígitos
- */
 export async function sendVerificationSms(
   toPhoneNumber: string,
-  code: string
+  fallbackCode: string
 ): Promise<SendOtpResult> {
-  // 1. Validamos formato internacional E.164 (+ seguido de código de país y número)
   const e164Regex = /^\+[1-9]\d{7,14}$/;
   if (!e164Regex.test(toPhoneNumber)) {
     return {
@@ -41,32 +30,63 @@ export async function sendVerificationSms(
     };
   }
 
-  // 2. Verificamos que existan las credenciales y al menos un remitente configurado
   if (!client || (!messagingServiceSid && !twilioPhoneNumber)) {
     console.error("Missing Twilio environment variables in .env");
     return {
       success: false,
-      error: "SMS verification service is currently unavailable.",
+      error: "SMS verification service is unavailable (missing Twilio .env credentials).",
     };
   }
 
   try {
-    const messageBody = `Your Takunex verification code is: ${code}. Valid for 10 minutes.`;
-
+    // En cuentas Trial, Twilio exige el identificador exacto de la plantilla ("sms_2fa")
     const payload = messagingServiceSid
-      ? { body: messageBody, messagingServiceSid, to: toPhoneNumber }
-      : { body: messageBody, from: twilioPhoneNumber as string, to: toPhoneNumber };
+      ? { body: "sms_2fa", messagingServiceSid, to: toPhoneNumber }
+      : { body: "sms_2fa", from: twilioPhoneNumber as string, to: toPhoneNumber };
 
-    await client.messages.create(payload);
+    const message = await client.messages.create(payload);
 
-    return { success: true };
+    // Esperamos brevemente y consultamos el mensaje para leer el PIN de 6 dígitos que generó Twilio
+    let renderedBody = message.body ?? "";
+    if (!/\b\d{6}\b/.test(renderedBody)) {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      const fetched = await client.messages(message.sid).fetch();
+      renderedBody = fetched.body ?? "";
+    }
+
+    const codeMatch = renderedBody.match(/\b(\d{6})\b/);
+    const actualCode = codeMatch ? codeMatch[1] : fallbackCode;
+
+    if (process.env.NODE_ENV !== "production") {
+      console.log(
+        `\n[Takunex DEV OTP] Phone: ${toPhoneNumber} | Code: ${actualCode} | Body: "${renderedBody}"\n`
+      );
+    }
+
+    return { success: true, actualCode };
   } catch (error: unknown) {
     console.error("Twilio SMS Error:", error);
+    const twilioErr = error as { code?: number; message?: string };
+
+    if (twilioErr.code === 21608) {
+      return {
+        success: false,
+        error: "Twilio Trial limit: this phone number is not in Verified Caller IDs.",
+      };
+    }
+
+    if (twilioErr.code === 21408) {
+      return {
+        success: false,
+        error: "Twilio Geo Permissions for Mexico (+52) are disabled in your Twilio Console.",
+      };
+    }
 
     return {
       success: false,
-      error:
-        "Failed to send verification SMS. Make sure the phone number is verified in Twilio.",
+      error: `Twilio error (${twilioErr.code ?? "unknown"}): ${
+        twilioErr.message ?? "Failed to send verification SMS."
+      }`,
     };
   }
 }
