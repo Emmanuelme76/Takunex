@@ -15,6 +15,20 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_or_expired_link: "The verification link is invalid or has expired.",
 };
 
+const inputClass =
+  "block w-full rounded-full bg-tx-gray-light/40 px-5 py-3 text-sm text-tx-ink " +
+  "placeholder:italic placeholder:text-tx-gray focus:outline-none focus:ring-2 focus:ring-tx-sky";
+
+function EyeIcon({ open }: { open: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+      <circle cx="12" cy="12" r="3" />
+      {!open && <path d="M3 3l18 18" />}
+    </svg>
+  );
+}
+
 function LoginFormContent() {
   const searchParams = useSearchParams();
   const urlErrorCode = searchParams.get("error");
@@ -24,6 +38,7 @@ function LoginFormContent() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -54,28 +69,28 @@ function LoginFormContent() {
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h1 className="text-xl font-bold text-slate-900">Welcome back</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Sign in to your Takunex account
+        <h1 className="text-4xl font-extrabold text-tx-ink">Sign in</h1>
+        <p className="mt-2 text-xs text-tx-black">
+          or create a{" "}
+          <Link href="/register" className="text-tx-violet underline">
+            new account
+          </Link>
         </p>
       </div>
 
       {displayedError && (
         <div
-          className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700"
+          className="rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700"
           role="alert"
         >
           {displayedError}
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-5">
         <div>
-          <label
-            htmlFor="email"
-            className="block text-xs font-medium text-slate-700"
-          >
-            Email address
+          <label htmlFor="email" className="mb-2 block text-sm font-semibold text-tx-black">
+            Email
           </label>
           <input
             id="email"
@@ -83,58 +98,58 @@ function LoginFormContent() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
+            placeholder="Email@example.com"
+            className={inputClass}
           />
         </div>
 
         <div>
-          <label
-            htmlFor="password"
-            className="block text-xs font-medium text-slate-700"
-          >
+          <label htmlFor="password" className="mb-2 block text-sm font-semibold text-tx-black">
             Password
           </label>
-          <input
-            id="password"
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
-          />
+          <div className="relative">
+            <input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
+              className={`${inputClass} pr-12`}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-tx-black"
+            >
+              <EyeIcon open={showPassword} />
+            </button>
+          </div>
+          <Link
+            href="/forgot-password"
+            className="mt-1 inline-block text-xs text-tx-violet underline"
+          >
+            I forgot my password
+          </Link>
         </div>
 
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-full bg-tx-sky px-4 py-3 text-base font-bold text-white transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-tx-teal focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isLoading ? "Signing in..." : "Sign In"}
+          {isLoading ? "Signing in..." : "Login"}
         </button>
       </form>
 
-      <div className="relative">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-slate-200" />
-        </div>
-        <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-white px-2 text-slate-400">Or</span>
-        </div>
+      <div className="flex items-center gap-4">
+        <div className="h-px flex-1 bg-tx-gray-light" />
+        <span className="text-xs text-tx-gray">or</span>
+        <div className="h-px flex-1 bg-tx-gray-light" />
       </div>
 
-      <GoogleAuthButton label="Sign in with Google" />
-
-      <p className="text-center text-xs text-slate-600">
-        Don&apos;t have an account?{" "}
-        <Link
-          href="/register"
-          className="font-semibold text-blue-600 hover:text-blue-500"
-        >
-          Create account
-        </Link>
-      </p>
+      <GoogleAuthButton label="Continue with Google" />
     </div>
   );
 }
