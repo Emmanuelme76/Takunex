@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { prisma } from "@/lib/prisma";
 import { generateOtpCode, sendVerificationSms } from "@/services/sms.service";
+import { providerHomePath } from "@/lib/provider-routes";
 
 export interface AuthActionResult {
   success: boolean;
@@ -292,10 +293,7 @@ export async function verifyPhoneOtp(
   if (dbUser.role === "ADMIN" || dbUser.role === "SUPER_ADMIN") {
     redirectTo = "/admin/dashboard";
   } else if (dbUser.role === "PROVIDER") {
-    redirectTo =
-      dbUser.provider?.verificationStatus === "APPROVED"
-        ? "/provider/dashboard"
-        : "/provider/onboarding";
+    redirectTo = providerHomePath(dbUser.provider?.verificationStatus);
   }
 
   return { success: true, redirectTo };
@@ -387,10 +385,7 @@ export async function loginUser(formData: {
   if (isAdmin) {
     redirectTo = "/admin/dashboard";
   } else if (dbUser.role === "PROVIDER") {
-    redirectTo =
-      dbUser.provider?.verificationStatus === "APPROVED"
-        ? "/provider/dashboard"
-        : "/provider/onboarding";
+    redirectTo = providerHomePath(dbUser.provider?.verificationStatus);
   }
 
   return { success: true, redirectTo };

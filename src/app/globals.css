@@ -34,4 +34,9 @@ body {
   --color-tx-teal: #007EA7;
   --color-tx-sky: #00A8E8;
   --color-tx-bg: #F6F6F6;
+  --color-tx-navy: #003459;
+  --color-tx-star: #FFCB45;
+  --color-tx-gray-dark: #919191;
+  --color-tx-gray-muted: #ADADAD;
+  --color-tx-canvas: #F0F0F0;
 }
