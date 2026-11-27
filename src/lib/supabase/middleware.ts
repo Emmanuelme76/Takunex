@@ -11,6 +11,7 @@ interface TakunexAppMetadata {
   status?: AccountStatus;
   phone_verified?: boolean;
   provider_status?: ProviderStatus;
+  role_selected?: boolean;
 }
 
 export async function updateSession(request: NextRequest) {
@@ -55,7 +56,9 @@ export async function updateSession(request: NextRequest) {
   const isAuthPage =
     pathname.startsWith('/login') || pathname.startsWith('/register');
   const isVerificationPage =
-    pathname.startsWith('/verify-email') || pathname.startsWith('/verify-phone');
+    pathname.startsWith("/verify-email") ||
+    pathname.startsWith("/verify-phone") ||
+    pathname.startsWith("/select-role"); 
 
   const redirectTo = (path: string, errorCode?: string) => {
     const url = request.nextUrl.clone();
@@ -79,6 +82,7 @@ export async function updateSession(request: NextRequest) {
   const role: UserRole = metadata.role ?? 'HOMEOWNER';
   const status: AccountStatus = metadata.status ?? 'ACTIVE';
   const isPhoneVerified = Boolean(metadata.phone_verified);
+  const needsRoleSelection = metadata.role_selected === false;
   const providerStatus: ProviderStatus = metadata.provider_status ?? 'NONE';
   const isAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN';
 
@@ -103,17 +107,25 @@ export async function updateSession(request: NextRequest) {
     const isEmailVerified = Boolean(user.email_confirmed_at);
 
     if (!isEmailVerified) {
-      if (pathname.startsWith('/verify-email')) {
+      if (pathname.startsWith("/verify-email")) {
         return supabaseResponse;
       }
-      return redirectTo('/verify-email');
+      return redirectTo("/verify-email");
     }
 
-    if (!isPhoneVerified) {
-      if (pathname.startsWith('/verify-phone')) {
+    if (needsRoleSelection) {
+      if (pathname.startsWith("/select-role")) {
         return supabaseResponse;
       }
-      return redirectTo('/verify-phone');
+      return redirectTo("/select-role");
+    }
+    // el rol se elige después del correo y antes del SMS
+
+    if (!isPhoneVerified) {
+      if (pathname.startsWith("/verify-phone")) {
+        return supabaseResponse;
+      }
+      return redirectTo("/verify-phone");
     }
   }
 

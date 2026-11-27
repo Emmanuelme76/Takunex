@@ -57,8 +57,11 @@ export async function GET(request: Request) {
     );
   }
 
+  let isNewUser = false;
+
   // 3. Si es la primera vez que entra con Google y aún no existe en Prisma, lo creamos como HOMEOWNER
   if (!dbUser) {
+    isNewUser = true;
     const fullName: string = supabaseUser.user_metadata?.full_name ?? "";
     const [firstName = "Takunex", ...rest] = fullName.trim().split(" ");
     const lastName = rest.join(" ") || "User";
@@ -103,16 +106,32 @@ export async function GET(request: Request) {
       ? "NONE"
       : dbUser.provider.verificationStatus;
 
+
+  const needsRole = 
+    isNewUser || supabaseUser.app_metadata?.role_selected === false;
+
   await adminSupabase.auth.admin.updateUserById(supabaseUser.id, {
     app_metadata: {
       role: dbUser.role,
       status: mappedStatus,
       phone_verified: dbUser.phoneVerified,
       provider_status: mappedProviderStatus,
+      role_selected: needsRole ? false: supabaseUser.app_metadata?.role_selected,
     },
   });
 
   // 5. Redirigimos según su estado de verificación y rol
+
+   const isAdminUser = dbUser.role === "ADMIN" || dbUser.role === "SUPER_ADMIN";
+
+   if (needsRole && !isAdminUser) {
+     return NextResponse.redirect(`${origin}/select-role`);
+   }
+
+   if (!dbUser.phoneVerified && !isAdminUser) {
+     return NextResponse.redirect(`${origin}/verify-phone`);
+   }
+
   if (!dbUser.phoneVerified && dbUser.role !== "ADMIN" && dbUser.role !== "SUPER_ADMIN") {
     return NextResponse.redirect(`${origin}/verify-phone`);
   }

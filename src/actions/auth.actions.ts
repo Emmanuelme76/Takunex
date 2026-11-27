@@ -119,6 +119,7 @@ export async function registerUser(formData: {
       status: "ACTIVE",
       phone_verified: false,
       provider_status: "NONE",
+      role_selected: false,
     },
   });
 
@@ -364,6 +365,7 @@ export async function loginUser(formData: {
       status: "ACTIVE",
       phone_verified: dbUser.phoneVerified,
       provider_status: mappedProviderStatus,
+      role_selected: data.user.app_metadata?.role_selected,
     },
   });
 
@@ -371,6 +373,10 @@ export async function loginUser(formData: {
 
   if (!isAdmin && !data.user.email_confirmed_at) {
     return { success: true, redirectTo: "/verify-email" };
+  }
+
+  if (!isAdmin && data.user.app_metadata?.role_selected === false) {
+      return { success: true, redirectTo: "/select-role" };
   }
 
   if (!isAdmin && !dbUser.phoneVerified) {
@@ -388,6 +394,79 @@ export async function loginUser(formData: {
   }
 
   return { success: true, redirectTo };
+}
+
+
+// ============================================================================
+// 4.5 ELEGIR ROL DURANTE EL REGISTRO (Homeowner o Provider)
+// ============================================================================
+export async function setUserRole(
+  role: "HOMEOWNER" | "PROVIDER"
+): Promise<AuthActionResult> {
+  // Nunca confiamos en lo que manda el cliente: validamos el rol en el servidor
+  if (role !== "HOMEOWNER" && role !== "PROVIDER") {
+    return { success: false, error: "Invalid account role selected." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Session expired. Please log in again." };
+  }
+
+  const dbUser = await prisma.user.findUnique({
+    where: { supabaseAuthId: user.id },
+    include: { provider: true, homeowner: true },
+  });
+
+  if (!dbUser) {
+    return { success: false, error: "User profile not found." };
+  }
+
+  // Seguridad: esta acción jamás toca cuentas de administrador
+  if (dbUser.role === "ADMIN" || dbUser.role === "SUPER_ADMIN") {
+    return { success: false, error: "Not allowed for this account." };
+  }
+
+  // Solo se puede usar durante el registro. Una cuenta ya activa cambia de rol
+  // desde su perfil (caso de uso "Switch Role to Provider")
+  if (dbUser.phoneVerified) {
+    return { success: false, error: "Your account is already set up." };
+  }
+
+  // Cambiamos el rol y creamos el perfil que falte.
+  // Si ya existía el otro perfil lo dejamos: permite alternar de rol después.
+  await prisma.user.update({
+    where: { id: dbUser.id },
+    data: {
+      role,
+      ...(role === "PROVIDER" && !dbUser.provider
+        ? { provider: { create: {} } }
+        : {}),
+      ...(role === "HOMEOWNER" && !dbUser.homeowner
+        ? { homeowner: { create: {} } }
+        : {}),
+    },
+  });
+
+  // Sincronizamos Supabase para que el middleware vea el rol nuevo.
+  // Copiamos el app_metadata existente para no perder ninguna clave.
+  const adminSupabase = createAdminClient();
+  await adminSupabase.auth.admin.updateUserById(user.id, {
+    app_metadata: {
+      ...user.app_metadata,
+      role,
+      role_selected: true,
+    },
+  });
+
+  return {
+    success: true,
+    redirectTo: user.email_confirmed_at ? "/verify-phone" : "/verify-email",
+  };
 }
 
 // ============================================================================
