@@ -12,13 +12,13 @@ const OPTIONS: { role: Role; title: string; subtitle: string; icon: string }[] =
     role: "PROVIDER",
     title: "Provider",
     subtitle: "I want to offer my services",
-    icon: "/icons/provider.svg",
+    icon: "/provider.svg",
   },
   {
     role: "HOMEOWNER",
     title: "Homeowner",
     subtitle: "I want help with my home",
-    icon: "/icons/homeowner.svg",
+    icon: "/homeowner.svg",
   },
 ];
 
