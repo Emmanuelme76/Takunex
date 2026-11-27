@@ -1,10 +1,13 @@
+import { Suspense } from "react";
+import { connection } from "next/server";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { resolveHomeownerOffer } from "@/lib/offers";
 
 interface DashboardPageProps {
-  searchParams: Promise<{ q?: string; promo?: string }>;
+  searchParams: Promise<{ q?: string; offer?: string }>;
 }
 
 interface ProviderCardData {
@@ -89,7 +92,7 @@ function ProviderAvatar({
       <img
         src={avatarUrl}
         alt={name}
-        className={`${sizeClass} shrink-0 rounded-full object-cover border border-tx-gray-light`}
+        className={`${sizeClass} shrink-0 rounded-full border border-tx-gray-light object-cover`}
       />
     );
   }
@@ -117,9 +120,22 @@ function StarIcon({ filled = true }: { filled?: boolean }) {
   );
 }
 
-export default async function HomeownerDashboardPage({
-  searchParams,
-}: DashboardPageProps) {
+function DashboardSkeleton() {
+  return (
+    <div className="mx-auto max-w-6xl animate-pulse space-y-8">
+      <div className="h-44 rounded-3xl bg-tx-sky/40" />
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="h-40 rounded-2xl bg-white" />
+        <div className="h-40 rounded-2xl bg-white" />
+        <div className="h-40 rounded-2xl bg-white" />
+      </div>
+    </div>
+  );
+}
+
+async function DashboardContent({ searchParams }: DashboardPageProps) {
+  await connection();
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -131,17 +147,13 @@ export default async function HomeownerDashboardPage({
 
   const resolvedParams = await searchParams;
   const searchTerm = resolvedParams.q?.trim() ?? "";
-  const promoActive = resolvedParams.promo === "15off";
+  const offerApplied = resolvedParams.offer === "applied";
 
   const dbUser = await prisma.user.findUnique({
     where: { supabaseAuthId: user.id },
     include: {
       homeowner: {
-        include: {
-          _count: {
-            select: { hiredServicesHistory: true },
-          },
-        },
+        select: { id: true },
       },
     },
   });
@@ -150,8 +162,17 @@ export default async function HomeownerDashboardPage({
     redirect("/login");
   }
 
-  const isFirstServiceEligible =
-    (dbUser.homeowner?._count.hiredServicesHistory ?? 0) === 0;
+  const nonCancelledOrdersCount = dbUser.homeowner
+    ? await prisma.serviceOrder.count({
+        where: {
+          clientId: dbUser.homeowner.id,
+          status: { not: "CANCELLED" },
+        },
+      })
+    : 0;
+
+  // Resuelve: 15% primer servicio -> oferta semanal -> null (oculta el banner)
+  const activeOffer = resolveHomeownerOffer(nonCancelledOrdersCount);
 
   const dbProviders = await prisma.provider.findMany({
     where: {
@@ -248,45 +269,51 @@ export default async function HomeownerDashboardPage({
     ? DEMO_TOP_PROVIDERS
     : [...mappedProviders].sort((a, b) => b.rating - a.rating).slice(0, 4);
 
+  const offerQueryParam = activeOffer && offerApplied ? "&offer=applied" : "";
+
   return (
     <div className="mx-auto max-w-6xl space-y-8">
-      {/* Banner Promocional */}
-      <section className="rounded-3xl bg-tx-sky px-8 py-8 text-white shadow-xs md:px-12 md:py-9">
-        <div className="max-w-xl">
-          <h1 className="text-3xl font-extrabold leading-tight tracking-tight md:text-4xl">
-            15% OFF
-            <span className="block">On your first service</span>
-          </h1>
+      {/* Banner Promocional Dinámico (desaparece si activeOffer es null) */}
+      {activeOffer && (
+        <section className="rounded-3xl bg-tx-sky px-8 py-8 text-white shadow-xs md:px-12 md:py-9">
+          <div className="max-w-xl">
+            <h1 className="text-3xl font-extrabold leading-tight tracking-tight md:text-4xl">
+              {activeOffer.headline}
+              <span className="block">{activeOffer.subheadline}</span>
+            </h1>
 
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            <Link
-              href={
-                promoActive
-                  ? "/homeowner/dashboard#providers"
-                  : "/homeowner/dashboard?promo=15off#providers"
-              }
-              className="inline-flex min-w-[180px] items-center justify-center rounded-xl bg-white px-7 py-2.5 text-sm font-bold text-tx-navy shadow-xs transition hover:bg-tx-canvas"
-            >
-              {promoActive ? "15% Discount Applied" : "See Offers"}
-            </Link>
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <Link
+                href={
+                  offerApplied
+                    ? "/homeowner/dashboard#providers"
+                    : "/homeowner/dashboard?offer=applied#providers"
+                }
+                className="inline-flex min-w-[180px] items-center justify-center rounded-xl bg-white px-7 py-2.5 text-sm font-bold text-tx-navy shadow-xs transition hover:bg-tx-canvas"
+              >
+                {offerApplied
+                  ? `${Math.round(activeOffer.discountRate * 100)}% Discount Applied`
+                  : "See Offers"}
+              </Link>
 
-            {promoActive && (
-              <span className="rounded-full bg-tx-navy/25 px-3.5 py-1 text-xs font-medium text-white">
-                {isFirstServiceEligible
-                  ? "Eligible on your first booking"
-                  : "Promo code: TAKUNEX15"}
-              </span>
-            )}
+              {offerApplied && (
+                <span className="rounded-full bg-tx-navy/25 px-3.5 py-1 text-xs font-medium text-white">
+                  {activeOffer.badgeText} &bull; Code: {activeOffer.code}
+                </span>
+              )}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Indicador de filtro activo en el buscador */}
       {searchTerm && (
         <div className="flex items-center justify-between rounded-xl border border-tx-gray-light bg-white px-4 py-3 text-sm">
           <p className="text-tx-ink">
             Showing results for{" "}
-            <span className="font-bold text-tx-black">&ldquo;{searchTerm}&rdquo;</span>
+            <span className="font-bold text-tx-black">
+              &ldquo;{searchTerm}&rdquo;
+            </span>
           </p>
           <Link
             href="/homeowner/dashboard"
@@ -299,7 +326,8 @@ export default async function HomeownerDashboardPage({
 
       {usingDemoFallback && (
         <div className="rounded-xl border border-tx-gray-light bg-white/80 px-4 py-2.5 text-xs text-tx-gray-dark">
-          Preview mode: showing sample providers until approved providers are registered in PostgreSQL.
+          Preview mode: showing sample providers until approved providers are
+          registered in PostgreSQL.
         </div>
       )}
 
@@ -309,7 +337,8 @@ export default async function HomeownerDashboardPage({
 
         {nearProviders.length === 0 ? (
           <div className="rounded-2xl bg-white p-8 text-center text-sm text-tx-gray-dark shadow-xs">
-            No providers matched your search. Try another name or service category.
+            No providers matched your search. Try another name or service
+            category.
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -346,7 +375,7 @@ export default async function HomeownerDashboardPage({
                 <Link
                   href={`/homeowner/new-request?providerId=${encodeURIComponent(
                     provider.id
-                  )}${promoActive ? "&promo=15off" : ""}`}
+                  )}${offerQueryParam}`}
                   className="mt-4 block w-full rounded-full bg-tx-sky py-1.5 text-center text-sm font-semibold text-white transition hover:bg-tx-teal"
                 >
                   Hire
@@ -403,7 +432,7 @@ export default async function HomeownerDashboardPage({
                     <Link
                       href={`/homeowner/new-request?providerId=${encodeURIComponent(
                         provider.id
-                      )}${promoActive ? "&promo=15off" : ""}`}
+                      )}${offerQueryParam}`}
                       className="mt-3.5 inline-block w-full max-w-[210px] rounded-full bg-tx-sky py-1.5 text-center text-sm font-semibold text-white transition hover:bg-tx-teal"
                     >
                       Hire
@@ -416,5 +445,15 @@ export default async function HomeownerDashboardPage({
         </section>
       )}
     </div>
+  );
+}
+
+export default function HomeownerDashboardPage({
+  searchParams,
+}: DashboardPageProps) {
+  return (
+    <Suspense fallback={<DashboardSkeleton />}>
+      <DashboardContent searchParams={searchParams} />
+    </Suspense>
   );
 }
