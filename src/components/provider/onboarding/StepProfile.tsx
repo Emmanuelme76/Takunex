@@ -5,6 +5,14 @@ import Image from "next/image";
 import { uploadFile, ALLOWED_IMAGE } from "@/lib/supabase/upload";
 import type { ProfileData, ServiceOption } from "./types";
 import { profileMissing } from "./types";
+import dynamic from "next/dynamic";
+
+// Leaflet necesita `window`, así que se carga solo en el navegador (ssr: false)
+const LocationMap = dynamic(() => import("./LocationMap"), {
+  ssr: false,
+  loading: () => <div className="h-64 animate-pulse rounded-2xl bg-tx-gray-light" />,
+});
+
 
 interface Props {
   data: ProfileData;
@@ -56,6 +64,9 @@ export function StepProfile({ data, onChange, services, showErrors }: Props) {
     );
   };
 
+    const handleMapPick = (lat: number, lng: number) =>
+    onChange({ ...data, lat, lng });
+
   const toggleService = (id: string) =>
     onChange({
       ...data,
@@ -99,21 +110,28 @@ export function StepProfile({ data, onChange, services, showErrors }: Props) {
       </div>
 
       <div className="grid gap-8 md:grid-cols-2">
-        {/* Zona de trabajo */}
+                {/* Zona de trabajo */}
         <div>
           <h3 className="mb-3 text-base font-bold text-tx-navy">Select Work Area</h3>
+
+          <LocationMap lat={data.lat} lng={data.lng} onPick={handleMapPick} />
+          <p className="mt-2 text-xs text-tx-gray">
+            Tap the map to place your pin, or drag it to adjust.
+          </p>
+
           <button
             type="button"
             onClick={handleGps}
-            className="w-full rounded-full bg-tx-sky px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-95"
+            className="mt-3 w-full rounded-full bg-tx-sky px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-95"
           >
-            {data.lat !== null ? "Location saved ✓ (tap to update)" : "Use my current location"}
+            Use my current location
           </button>
           {gpsDenied && (
             <p className="mt-2 text-xs font-medium text-red-600" role="alert">
               Location access was denied. Please enter your address or ZIP code manually.
             </p>
           )}
+
           <label htmlFor="manualAddress" className="mb-1.5 mt-4 block text-xs font-semibold text-tx-black">
             Or enter your address / ZIP code
           </label>
@@ -126,7 +144,9 @@ export function StepProfile({ data, onChange, services, showErrors }: Props) {
             className={`${fieldClass} ${showErrors && missing.location ? "border-red-500" : ""}`}
           />
           {showErrors && missing.location && (
-            <p className="mt-1 text-xs font-medium text-red-600">Please set your work area.</p>
+            <p className="mt-1 text-xs font-medium text-red-600">
+              Please place a pin on the map or enter your address.
+            </p>
           )}
         </div>
 
