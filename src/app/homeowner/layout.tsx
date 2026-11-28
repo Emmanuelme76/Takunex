@@ -27,6 +27,7 @@ async function AuthenticatedHomeownerShell({
       firstName: true,
       lastName: true,
       email: true,
+      avatarUrl: true,
     },
   });
 
@@ -37,7 +38,11 @@ async function AuthenticatedHomeownerShell({
   const fullName = `${dbUser.firstName} ${dbUser.lastName}`.trim();
 
   return (
-    <HomeownerShell userName={fullName} userEmail={dbUser.email}>
+    <HomeownerShell
+      userName={fullName}
+      userEmail={dbUser.email}
+      avatarUrl={dbUser.avatarUrl}
+    >
       {children}
     </HomeownerShell>
   );
@@ -51,7 +56,7 @@ export default function HomeownerLayout({
   return (
     <Suspense
       fallback={
-        <HomeownerShell userName="Loading..." userEmail="">
+        <HomeownerShell userName="Loading..." userEmail="" avatarUrl={null}>
           <div className="mx-auto max-w-6xl animate-pulse space-y-6">
             <div className="h-44 rounded-3xl bg-white/70" />
             <div className="h-64 rounded-2xl bg-white/70" />

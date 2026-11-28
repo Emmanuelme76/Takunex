@@ -8,6 +8,7 @@ import { logoutUser } from "@/actions/auth.actions";
 interface HomeownerShellProps {
   userName: string;
   userEmail: string;
+  avatarUrl?: string | null;
   children: React.ReactNode;
 }
 
@@ -74,6 +75,7 @@ function SidebarSvgIcon({
 export function HomeownerShell({
   userName,
   userEmail,
+  avatarUrl,
   children,
 }: HomeownerShellProps) {
   const pathname = usePathname();
@@ -196,8 +198,8 @@ export function HomeownerShell({
 
           {/* Iconos derechos: Notificaciones y Avatar */}
           <div className="ml-4 flex items-center gap-5">
-            <button
-              type="button"
+            <Link
+              href="/homeowner/messages"
               aria-label="Notifications"
               className="relative rounded-full p-2 transition hover:bg-tx-ink/40"
             >
@@ -206,7 +208,7 @@ export function HomeownerShell({
                 alt="Notifications"
                 className="h-6 w-6 object-contain"
               />
-            </button>
+            </Link>
 
             {/* Avatar desplegable */}
             <div className="relative">
@@ -214,10 +216,10 @@ export function HomeownerShell({
                 type="button"
                 onClick={() => setMenuOpen((prev) => !prev)}
                 aria-label="User menu"
-                className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border-2 border-white/20 transition hover:border-tx-sky"
+                className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border-2 border-white/20 bg-white transition hover:border-tx-sky cursor-pointer"
               >
                 <img
-                  src="/profile.svg"
+                  src={avatarUrl || "/profile.svg"}
                   alt={userName || "User profile"}
                   className="h-full w-full object-cover"
                 />

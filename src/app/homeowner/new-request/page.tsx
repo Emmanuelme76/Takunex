@@ -78,6 +78,27 @@ async function NewRequestContent({ searchParams }: NewRequestPageProps) {
           },
         },
       },
+      reviewsReceived: {
+        where: { isDeleted: false },
+        orderBy: { feedbackDate: "desc" },
+        take: 6,
+        select: {
+          id: true,
+          starRating: true,
+          comment: true,
+          feedbackDate: true,
+          author: {
+            select: {
+              user: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+          },
+        },
+      },
     },
     orderBy: [{ rating: "desc" }],
   });
@@ -131,7 +152,14 @@ async function NewRequestContent({ searchParams }: NewRequestPageProps) {
       title: svc.title,
       description: svc.description,
       categoryName: svc.category.name,
-      hourlyRate: Number(svc.hourlyRate),
+      rate: Number(svc.hourlyRate),
+    })),
+    reviews: p.reviewsReceived.map((rev) => ({
+      id: rev.id,
+      starRating: rev.starRating,
+      comment: rev.comment,
+      authorName: `${rev.author.user.firstName} ${rev.author.user.lastName}`.trim(),
+      feedbackDate: rev.feedbackDate.toISOString(),
     })),
   }));
 

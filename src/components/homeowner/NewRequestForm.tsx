@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createServiceOrderAction } from "@/actions/booking.actions";
@@ -11,7 +11,15 @@ export interface BookableServiceItem {
   title: string;
   description: string;
   categoryName: string;
-  hourlyRate: number;
+  rate: number;
+}
+
+export interface ProviderReviewItem {
+  id: string;
+  starRating: number;
+  comment: string | null;
+  authorName: string;
+  feedbackDate: string;
 }
 
 export interface BookableProviderItem {
@@ -22,6 +30,7 @@ export interface BookableProviderItem {
   totalReviews: number;
   aboutMe: string | null;
   services: BookableServiceItem[];
+  reviews: ProviderReviewItem[];
 }
 
 interface NewRequestFormProps {
@@ -31,8 +40,44 @@ interface NewRequestFormProps {
   activeOffer: ActiveOffer | null;
 }
 
+interface TimeSlotOption {
+  value: string; // "HH:mm"
+  label: string; // "08:00 AM"
+}
+
+const HALF_HOUR_SLOTS: TimeSlotOption[] = (() => {
+  const slots: TimeSlotOption[] = [];
+  for (let hour = 7; hour <= 21; hour++) {
+    for (const minute of [0, 30]) {
+      const value = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+      const period = hour >= 12 ? "PM" : "AM";
+      const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+      const label = `${String(displayHour).padStart(2, "0")}:${String(minute).padStart(2, "0")} ${period}`;
+      slots.push({ value, label });
+    }
+  }
+  return slots;
+})();
+
 function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function getTodayLocalDateString(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getInitials(fullName: string): string {
+  return fullName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 export function NewRequestForm({
@@ -55,11 +100,13 @@ export function NewRequestForm({
     [providers, selectedProviderId]
   );
 
-  const [selectedServiceId, setSelectedServiceId] = useState(
-    defaultProvider?.services[0]?.id ?? ""
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>(
+    defaultProvider?.services[0]?.id ? [defaultProvider.services[0].id] : []
   );
-  const [estimatedHours, setEstimatedHours] = useState<number>(2);
-  const [scheduledDate, setScheduledDate] = useState("");
+
+  const [todayStr, setTodayStr] = useState<string>("");
+  const [dateOnly, setDateOnly] = useState<string>("");
+  const [timeSlot, setTimeSlot] = useState<string>("09:00");
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
@@ -73,22 +120,62 @@ export function NewRequestForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  useEffect(() => {
+    setTodayStr(getTodayLocalDateString());
+  }, []);
+
+  // Filtrar horarios pasados si la fecha elegida es hoy
+  const availableTimeSlots = useMemo(() => {
+    if (!dateOnly || !todayStr || dateOnly !== todayStr) {
+      return HALF_HOUR_SLOTS;
+    }
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    return HALF_HOUR_SLOTS.filter((slot) => {
+      const [h, m] = slot.value.split(":").map(Number);
+      return h * 60 + m > currentMinutes;
+    });
+  }, [dateOnly, todayStr]);
+
+  // Ajustar automáticamente el horario si el seleccionado ya expiró hoy
+  useEffect(() => {
+    if (
+      availableTimeSlots.length > 0 &&
+      !availableTimeSlots.some((s) => s.value === timeSlot)
+    ) {
+      setTimeSlot(availableTimeSlots[0].value);
+    }
+  }, [availableTimeSlots, timeSlot]);
+
   const handleProviderChange = (newProviderId: string) => {
     setSelectedProviderId(newProviderId);
     const nextProvider = providers.find((p) => p.id === newProviderId);
-    setSelectedServiceId(nextProvider?.services[0]?.id ?? "");
+    setSelectedServiceIds(
+      nextProvider?.services[0]?.id ? [nextProvider.services[0].id] : []
+    );
   };
 
-  const selectedService = useMemo(
+  const toggleServiceSelection = (serviceId: string) => {
+    setSelectedServiceIds((prev) =>
+      prev.includes(serviceId)
+        ? prev.filter((id) => id !== serviceId)
+        : [...prev, serviceId]
+    );
+  };
+
+  const selectedServices = useMemo(
     () =>
-      selectedProvider?.services.find((s) => s.id === selectedServiceId) ??
-      selectedProvider?.services[0],
-    [selectedProvider, selectedServiceId]
+      (selectedProvider?.services ?? []).filter((s) =>
+        selectedServiceIds.includes(s.id)
+      ),
+    [selectedProvider, selectedServiceIds]
   );
 
   const financialBreakdown = useMemo(() => {
-    const rate = selectedService?.hourlyRate ?? 0;
-    const subtotal = roundMoney(rate * estimatedHours);
+    const subtotal = roundMoney(
+      selectedServices.reduce((acc, svc) => acc + svc.rate, 0)
+    );
     const discount =
       applyOffer && activeOffer
         ? roundMoney(subtotal * activeOffer.discountRate)
@@ -99,21 +186,33 @@ export function NewRequestForm({
     const providerNetAmount = roundMoney(totalAmount - platformComission);
 
     return {
-      rate,
       subtotal,
       discount,
       totalAmount,
       platformComission,
       providerNetAmount,
     };
-  }, [selectedService, estimatedHours, applyOffer, activeOffer]);
+  }, [selectedServices, applyOffer, activeOffer]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
-    if (!selectedProvider || !selectedService) {
-      setErrorMessage("Please select a valid provider and service.");
+    if (!selectedProvider || selectedServices.length === 0) {
+      setErrorMessage("Please select at least one service to hire.");
+      return;
+    }
+
+    if (!dateOnly || !timeSlot) {
+      setErrorMessage("Please select a valid date and 30-minute time slot.");
+      return;
+    }
+
+    const scheduledIsoString = `${dateOnly}T${timeSlot}:00`;
+    const chosenDate = new Date(scheduledIsoString);
+
+    if (Number.isNaN(chosenDate.getTime()) || chosenDate <= new Date()) {
+      setErrorMessage("Please select an upcoming date and time slot.");
       return;
     }
 
@@ -121,9 +220,8 @@ export function NewRequestForm({
 
     const result = await createServiceOrderAction({
       providerId: selectedProvider.id,
-      serviceId: selectedService.id,
-      estimatedHours,
-      scheduledDate,
+      serviceIds: selectedServices.map((s) => s.id),
+      scheduledDate: scheduledIsoString,
       address,
       city,
       state,
@@ -136,6 +234,17 @@ export function NewRequestForm({
     if (!result.success) {
       setErrorMessage(result.error ?? "Unable to submit your booking.");
       setIsSubmitting(false);
+      return;
+    }
+
+    if (
+      paymentType === "CARD" &&
+      result.orderIds &&
+      result.orderIds.length > 0
+    ) {
+      router.push(
+        `/homeowner/checkout?orders=${encodeURIComponent(result.orderIds.join(","))}`
+      );
       return;
     }
 
@@ -156,7 +265,7 @@ export function NewRequestForm({
             Hire a Service Provider
           </h1>
           <p className="text-sm text-tx-gray-dark">
-            Configure your service details, schedule, and simulated payment method.
+            Configure your services, schedule, and simulated payment method.
           </p>
         </div>
       </div>
@@ -175,107 +284,252 @@ export function NewRequestForm({
         className="grid grid-cols-1 gap-6 lg:grid-cols-3"
       >
         <div className="space-y-6 lg:col-span-2">
-          <section className="space-y-4 rounded-2xl bg-white p-6 shadow-xs">
+          {/* Section 1: Provider, Multi-Service Checkboxes & 30-min Schedule */}
+          <section className="space-y-5 rounded-2xl bg-white p-6 shadow-xs">
             <h2 className="text-base font-bold text-tx-black">
-              1. Provider &amp; Service
+              1. Provider, Services &amp; Schedule
             </h2>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label
-                  htmlFor="providerId"
-                  className="block text-xs font-semibold text-tx-ink"
-                >
-                  Provider
-                </label>
-                <select
-                  id="providerId"
-                  value={selectedProvider?.id ?? ""}
-                  onChange={(e) => handleProviderChange(e.target.value)}
-                  className="mt-1.5 w-full rounded-xl border border-tx-gray-light bg-white px-3.5 py-2.5 text-sm text-tx-black focus:border-tx-sky focus:outline-none"
-                >
-                  {providers.map((provider) => (
-                    <option key={provider.id} value={provider.id}>
-                      {provider.fullName} ({provider.rating.toFixed(1)} ★)
-                    </option>
-                  ))}
-                </select>
+            <div>
+              <label
+                htmlFor="providerId"
+                className="block text-xs font-semibold text-tx-ink"
+              >
+                Provider
+              </label>
+              <select
+                id="providerId"
+                value={selectedProvider?.id ?? ""}
+                onChange={(e) => handleProviderChange(e.target.value)}
+                className="mt-1.5 w-full rounded-xl border border-tx-gray-light bg-white px-3.5 py-2.5 text-sm text-tx-black focus:border-tx-sky focus:outline-none"
+              >
+                {providers.map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.fullName} ({provider.rating.toFixed(1)} ★)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Selección múltiple de servicios mediante Checkboxes */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="block text-xs font-semibold text-tx-ink">
+                  Services to Hire (Select one or more)
+                </span>
+                <span className="text-[11px] font-medium text-tx-teal">
+                  {selectedServices.length} selected
+                </span>
               </div>
 
-              <div>
-                <label
-                  htmlFor="serviceId"
-                  className="block text-xs font-semibold text-tx-ink"
-                >
-                  Service Offering
-                </label>
-                <select
-                  id="serviceId"
-                  value={selectedService?.id ?? ""}
-                  onChange={(e) => setSelectedServiceId(e.target.value)}
-                  className="mt-1.5 w-full rounded-xl border border-tx-gray-light bg-white px-3.5 py-2.5 text-sm text-tx-black focus:border-tx-sky focus:outline-none"
-                >
-                  {(selectedProvider?.services ?? []).map((svc) => (
-                    <option key={svc.id} value={svc.id}>
-                      {svc.title} — ${svc.hourlyRate.toFixed(2)}/hr
-                    </option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                {(selectedProvider?.services ?? []).map((svc) => {
+                  const isChecked = selectedServiceIds.includes(svc.id);
+                  return (
+                    <label
+                      key={svc.id}
+                      className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition ${
+                        isChecked
+                          ? "border-tx-sky bg-tx-sky/10"
+                          : "border-tx-gray-light bg-tx-canvas/40 hover:border-tx-navy/40"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggleServiceSelection(svc.id)}
+                        className="mt-0.5 h-4 w-4 shrink-0 rounded accent-tx-sky"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="text-xs font-bold text-tx-black">
+                            {svc.title}
+                          </span>
+                          <span className="shrink-0 text-xs font-extrabold text-tx-navy">
+                            ${svc.rate.toFixed(2)}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-[11px] font-medium text-tx-teal">
+                          {svc.categoryName}
+                        </p>
+                        {svc.description && (
+                          <p className="mt-1 line-clamp-2 text-[11px] text-tx-gray-dark">
+                            {svc.description}
+                          </p>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })}
               </div>
             </div>
 
-            {selectedService && (
-              <div className="rounded-xl bg-tx-canvas/70 p-3.5 text-xs text-tx-ink">
-                <span className="font-bold text-tx-navy">
-                  [{selectedService.categoryName}]
-                </span>{" "}
-                {selectedService.description}
-              </div>
-            )}
-
+            {/* Fecha futura + Selector bloqueado de 30 en 30 minutos */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label
-                  htmlFor="estimatedHours"
+                  htmlFor="scheduledDateOnly"
                   className="block text-xs font-semibold text-tx-ink"
                 >
-                  Estimated Duration (Hours)
+                  Preferred Date
                 </label>
                 <input
-                  id="estimatedHours"
-                  type="number"
-                  min={1}
-                  max={12}
+                  id="scheduledDateOnly"
+                  type="date"
                   required
-                  value={estimatedHours}
-                  onChange={(e) =>
-                    setEstimatedHours(
-                      Math.min(Math.max(Number(e.target.value) || 1, 1), 12)
-                    )
-                  }
+                  min={todayStr}
+                  value={dateOnly}
+                  onChange={(e) => setDateOnly(e.target.value)}
                   className="mt-1.5 w-full rounded-xl border border-tx-gray-light px-3.5 py-2.5 text-sm text-tx-black focus:border-tx-sky focus:outline-none"
                 />
               </div>
 
               <div>
                 <label
-                  htmlFor="scheduledDate"
+                  htmlFor="scheduledTimeSlot"
                   className="block text-xs font-semibold text-tx-ink"
                 >
-                  Preferred Date &amp; Time
+                  Preferred Time
                 </label>
-                <input
-                  id="scheduledDate"
-                  type="datetime-local"
+                <select
+                  id="scheduledTi meSlot"
                   required
-                  value={scheduledDate}
-                  onChange={(e) => setScheduledDate(e.target.value)}
-                  className="mt-1.5 w-full rounded-xl border border-tx-gray-light px-3.5 py-2.5 text-sm text-tx-black focus:border-tx-sky focus:outline-none"
-                />
+                  value={timeSlot}
+                  onChange={(e) => setTimeSlot(e.target.value)}
+                  disabled={availableTimeSlots.length === 0}
+                  className="mt-1.5 w-full rounded-xl border border-tx-gray-light bg-white px-3.5 py-2.5 text-sm text-tx-black focus:border-tx-sky focus:outline-none disabled:opacity-50"
+                >
+                  {availableTimeSlots.length === 0 ? (
+                    <option value="">No slots left today — choose tomorrow</option>
+                  ) : (
+                    availableTimeSlots.map((slot) => (
+                      <option key={slot.value} value={slot.value}>
+                        {slot.label}
+                      </option>
+                    ))
+                  )}
+                </select>
               </div>
             </div>
+            <p className="-mt-3 text-[11px] text-tx-gray-dark">
+              Appointments are scheduled in exact 30-minute intervals (:00 or :30)
+              for upcoming dates only.
+            </p>
           </section>
 
+          {/* Provider Profile & Reviews Card */}
+          {selectedProvider && (
+            <section className="space-y-5 rounded-2xl bg-white p-6 shadow-xs">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                {selectedProvider.avatarUrl ? (
+                  <img
+                    src={selectedProvider.avatarUrl}
+                    alt={selectedProvider.fullName}
+                    className="h-16 w-16 shrink-0 rounded-full border border-tx-gray-light object-cover"
+                  />
+                ) : (
+                  <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-tx-navy text-lg font-bold text-white">
+                    {getInitials(selectedProvider.fullName)}
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <h2 className="text-lg font-extrabold text-tx-black">
+                    {selectedProvider.fullName}
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-0.5 text-base leading-none">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <span
+                          key={star}
+                          className={
+                            star <= Math.round(selectedProvider.rating)
+                              ? "text-tx-star"
+                              : "text-tx-gray-light"
+                          }
+                        >
+                          ★
+                        </span>
+                      ))}
+                    </div>
+                    <span className="text-sm font-bold text-tx-black">
+                      {selectedProvider.rating.toFixed(1)}
+                    </span>
+                    <span className="text-xs text-tx-gray-dark">
+                      ({selectedProvider.totalReviews}{" "}
+                      {selectedProvider.totalReviews === 1 ? "review" : "reviews"})
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {selectedProvider.aboutMe && (
+                <div className="space-y-1.5">
+                  <h3 className="text-xs font-bold uppercase tracking-wide text-tx-navy">
+                    About me
+                  </h3>
+                  <p className="rounded-xl bg-tx-canvas/70 p-3.5 text-xs leading-relaxed text-tx-ink">
+                    {selectedProvider.aboutMe}
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold uppercase tracking-wide text-tx-navy">
+                    Reviews
+                  </h3>
+                  <span className="text-[11px] text-tx-gray-dark">
+                    {selectedProvider.reviews.length > 0
+                      ? `Showing latest ${selectedProvider.reviews.length}`
+                      : "No written reviews yet"}
+                  </span>
+                </div>
+
+                {selectedProvider.reviews.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-tx-gray-light p-4 text-center text-xs text-tx-gray-dark">
+                    This provider has no written client reviews yet.
+                  </p>
+                ) : (
+                  <div className="grid max-h-60 grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
+                    {selectedProvider.reviews.map((rev) => (
+                      <div
+                        key={rev.id}
+                        className="rounded-xl border border-tx-gray-light/80 bg-tx-canvas/40 p-3.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-0.5 text-sm">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <span
+                                key={star}
+                                className={
+                                  star <= rev.starRating
+                                    ? "text-tx-star"
+                                    : "text-tx-gray-light"
+                                }
+                              >
+                                ★
+                              </span>
+                            ))}
+                          </div>
+                          <span className="text-[11px] font-medium text-tx-gray-dark">
+                            {rev.authorName}
+                          </span>
+                        </div>
+                        {rev.comment && (
+                          <p className="mt-1.5 text-xs italic text-tx-ink">
+                            &ldquo;{rev.comment}&rdquo;
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* Section 2: Service Location & Job Details */}
           <section className="space-y-4 rounded-2xl bg-white p-6 shadow-xs">
             <h2 className="text-base font-bold text-tx-black">
               2. Service Location &amp; Job Details
@@ -372,6 +626,7 @@ export function NewRequestForm({
           </section>
         </div>
 
+        {/* Section 3: Payment & Cost Summary */}
         <div className="space-y-6">
           <section className="space-y-5 rounded-2xl bg-white p-6 shadow-xs">
             <h2 className="text-base font-bold text-tx-black">
@@ -388,7 +643,7 @@ export function NewRequestForm({
                     : "border-tx-gray-light text-tx-gray-dark hover:border-tx-navy"
                 }`}
               >
-                Card (Simulated)
+                Card 
               </button>
               <button
                 type="button"
@@ -403,7 +658,6 @@ export function NewRequestForm({
               </button>
             </div>
 
-            {/* Oferta activa (15% primera cuenta o promoción semanal vigente) */}
             {activeOffer && (
               <label className="flex cursor-pointer items-center justify-between rounded-xl border border-tx-sky/40 bg-tx-sky/10 px-3.5 py-2.5">
                 <div>
@@ -424,10 +678,28 @@ export function NewRequestForm({
             )}
 
             <div className="space-y-2.5 border-t border-tx-canvas pt-4 text-xs">
-              <div className="flex justify-between text-tx-gray-dark">
+              {selectedServices.length === 0 ? (
+                <p className="text-tx-gray-dark">No services selected yet.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {selectedServices.map((svc) => (
+                    <div
+                      key={svc.id}
+                      className="flex justify-between text-tx-gray-dark"
+                    >
+                      <span className="truncate pr-2">{svc.title}</span>
+                      <span className="shrink-0 font-semibold text-tx-black">
+                        ${svc.rate.toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex justify-between border-t border-tx-canvas pt-2 text-tx-gray-dark">
                 <span>
-                  Rate (${financialBreakdown.rate.toFixed(2)} &times;{" "}
-                  {estimatedHours}h)
+                  Subtotal ({selectedServices.length}{" "}
+                  {selectedServices.length === 1 ? "service" : "services"})
                 </span>
                 <span className="font-semibold text-tx-black">
                   ${financialBreakdown.subtotal.toFixed(2)}
@@ -467,10 +739,14 @@ export function NewRequestForm({
 
             <button
               type="submit"
-              disabled={isSubmitting || !selectedService}
+              disabled={isSubmitting || selectedServices.length === 0}
               className="w-full rounded-full bg-tx-sky py-2.5 text-sm font-bold text-white shadow-xs transition hover:bg-tx-teal disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isSubmitting ? "Confirming Booking..." : "Confirm & Hire"}
+              {isSubmitting
+                ? "Processing..."
+                : paymentType === "CARD"
+                  ? `Continue to Card Payment (${selectedServices.length})`
+                  : `Confirm & Hire (${selectedServices.length})`}
             </button>
           </section>
         </div>
